@@ -1,5 +1,6 @@
 package com.bigo.android.revolut.currency.core.network
 
+import com.bigo.android.revolut.currency.converter.data.remote.CurrencyApi
 import dagger.Module
 import dagger.Provides
 import okhttp3.Interceptor
@@ -10,11 +11,18 @@ import retrofit2.Converter
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.create
 import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
 object NetworkModule {
+
+    @Provides
+    @Singleton
+    @JvmStatic
+    fun provideCurrencyApi(retrofit: Retrofit): CurrencyApi =
+        retrofit.create()
 
     @Provides
     @Singleton
