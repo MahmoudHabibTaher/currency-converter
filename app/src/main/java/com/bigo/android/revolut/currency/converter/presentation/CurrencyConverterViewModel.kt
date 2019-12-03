@@ -7,25 +7,29 @@ import com.bigo.android.revolut.currency.converter.domain.CalculateRateParams
 import com.bigo.android.revolut.currency.converter.domain.CurrencyRateParams
 import com.bigo.android.revolut.currency.converter.domain.ObserveCurrencyRate
 import com.bigo.android.revolut.currency.converter.domain.entities.CurrencyRate
-import com.bigo.android.revolut.currency.core.presentation.ActionToResultMapper
 import com.bigo.android.revolut.currency.core.presentation.BaseViewModel
-import com.bigo.android.revolut.currency.core.presentation.IntentToActionMapper
-import com.bigo.android.revolut.currency.core.presentation.ResultToStateMapper
-import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.ProducerScope
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.mapLatest
 import javax.inject.Inject
 
-@FlowPreview
 @ExperimentalCoroutinesApi
 class CurrencyConverterViewModel @Inject constructor(
     private val currencyRate: ObserveCurrencyRate,
     private val calculateRate: CalculateRate
 ) : BaseViewModel<CurrencyConverterViewState, CurrencyConverterIntent>() {
 
-    private var value: Double = 100.0
+    private val initialCurrency = "EUR"
 
-    private var currency = "EUR"
+    private val initialValue = 100.0
+
+    private var value: Double = initialValue
+
+    private var currency = initialCurrency
 
     private var rate: CurrencyRate? = null
 
@@ -33,9 +37,33 @@ class CurrencyConverterViewModel @Inject constructor(
 
     private var latest: Job? = null
 
-    private val intentsMapper: IntentToActionMapper<CurrencyConverterIntent,
-            CurrencyConverterAction> = { intent ->
+    override fun onIntent(intent: CurrencyConverterIntent) {
+        launch {
+            Log.d("HomeViewModel", "onIntent $intent")
+            intent.let(::mapIntent).let { action ->
+                Log.d("HomeViewModel", "onAction $action")
+                when (action) {
+                    is CurrencyConverterAction.GetCurrencyRate -> {
+                        getCurrencyRate(action.currency)
+                    }
+
+                    is CurrencyConverterAction.CalculateRates -> {
+                        ioJob {
+                            value = action.value
+
+                            calculateRate(rate, value)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mapIntent(intent: CurrencyConverterIntent) =
         when (intent) {
+            is CurrencyConverterIntent.Initial -> {
+                CurrencyConverterAction.GetCurrencyRate(initialCurrency)
+            }
             is CurrencyConverterIntent.LoadRates -> {
                 CurrencyConverterAction.GetCurrencyRate(intent.currency)
             }
@@ -43,26 +71,21 @@ class CurrencyConverterViewModel @Inject constructor(
                 CurrencyConverterAction.CalculateRates(intent.value)
             }
         }
+
+    private fun getCurrencyRate(
+        currency: String
+    ) {
+        onResult(CurrencyConverterResult.GetCurrencyRateResult.Loading)
+        latest?.cancel()
+        latest = currencyRate.getFlow(CurrencyRateParams(currency)).mapLatest {
+            rate = it
+            calculateRate(rate, value)
+        }.flowOn(Dispatchers.IO).launchIn(viewModelScope)
     }
 
-    private val actionsMapper: suspend ProducerScope<CurrencyConverterResult>.(CurrencyConverterAction) -> Unit =
-        { action ->
-            when (action) {
-                is CurrencyConverterAction.GetCurrencyRate -> {
-                    getCurrencyRate(currency)
-                }
-
-                is CurrencyConverterAction.CalculateRates -> {
-                    value = action.value
-
-                    calculateRate(rate, value)
-                }
-            }
-        }
-
-    private val resultMapper: ResultToStateMapper<CurrencyConverterResult,
-            CurrencyConverterViewState> = { result ->
-        when (result) {
+    private fun onResult(result: CurrencyConverterResult) {
+        Log.d("HomeViewModel", "onResult $result")
+        state = when (result) {
             is CurrencyConverterResult.GetCurrencyRateResult.Loading ->
                 state.copy(rate = state.rate.toLoading())
             is CurrencyConverterResult.GetCurrencyRateResult.Success ->
@@ -70,51 +93,23 @@ class CurrencyConverterViewModel @Inject constructor(
             is CurrencyConverterResult.GetCurrencyRateResult.Error ->
                 state.copy(rate = state.rate.toError(result.error))
         }
+
+        notifyState(state)
     }
 
-    override fun processIntents(intents: Flow<CurrencyConverterIntent>) {
-        intents.logEvents()
-            .intentToAction(intentsMapper)
-            .logEvents()
-            .actionToResultWithChannel(actionsMapper)
-            .logEvents()
-            .resultToState(resultMapper)
-            .logEvents()
-            .onEach {
-                state = it
-                notifyState(it)
-            }.catch {
-                Log.e("HomeViewModel", "Error in intents stream", it)
-            }.launchIn(viewModelScope)
-    }
-
-    private fun <T> Flow<T>.logEvents() = onEach {
-        Log.d("HomeViewModel", "onEvent $it")
-    }
-
-    private suspend fun ProducerScope<CurrencyConverterResult>.getCurrencyRate(
-        currency: String
-    ) {
-        send(CurrencyConverterResult.GetCurrencyRateResult.Loading)
-        latest?.cancel()
-        latest = currencyRate.getFlow(CurrencyRateParams(currency)).onEach {
-            rate = it
-            calculateRate(rate, value)
-        }.launchIn(CoroutineScope(Dispatchers.IO))
-    }
-
-    private suspend fun ProducerScope<CurrencyConverterResult>.calculateRate(
+    private suspend fun calculateRate(
         rate: CurrencyRate?,
         value: Double
     ) {
+        Log.d("HomeViewModel", "calculateRate $rate, $value")
         try {
             rate?.let {
                 val calculatedRate = calculateRate(CalculateRateParams(value, rate))
 
-                send(CurrencyConverterResult.GetCurrencyRateResult.Success(calculatedRate))
+                onResult(CurrencyConverterResult.GetCurrencyRateResult.Success(calculatedRate))
             }
         } catch (ex: Exception) {
-            send(
+            onResult(
                 CurrencyConverterResult.GetCurrencyRateResult.Error(
                     ex.message ?: ""
                 )

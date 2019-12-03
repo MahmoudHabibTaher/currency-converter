@@ -8,12 +8,20 @@ import javax.inject.Inject
 class CalculateRate @Inject constructor() : UseCase<CalculatedResult, CalculateRateParams>() {
     override suspend fun run(params: CalculateRateParams?): CalculatedResult {
         val value = params?.value ?: 1.0
-        val calculatedValues = params?.currencyRate?.rates?.map {
-            CalculatedRate(
-                currency = it.currency,
-                value = it.rate * value
-            )
+
+        val values = params?.currencyRate?.let {
+            val base = CalculatedRate(it.base, value)
+
+            val calculatedValues = params.currencyRate.rates.map {
+                CalculatedRate(
+                    currency = it.currency,
+                    value = it.rate * value
+                )
+            }
+
+            listOf(base) + calculatedValues
         } ?: listOf()
-        return CalculatedResult(calculatedValues)
+
+        return CalculatedResult(values)
     }
 }

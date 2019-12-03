@@ -19,10 +19,12 @@
         app:layout_constraintTop_toTopOf="parent"
         tools:text="USD" />
 
-    <TextView
+    <EditText
         android:id="@+id/value_text_view"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:gravity="center"
+        android:minEms="4"
         android:textColor="#000000"
         android:textSize="16sp"
         android:textStyle="bold"

@@ -10,19 +10,18 @@ import com.bigo.android.revolut.currency.core.presentation.BaseViewModel
 import com.bigo.android.revolut.currency.di.component
 import com.bigo.android.revolut.currency.di.fragmentViewModel
 import kotlinx.android.synthetic.main.fragment_currency_converter.*
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.channels.ProducerScope
 
-@ExperimentalCoroutinesApi
 class CurrencyConverterFragment :
     BaseFragment<CurrencyConverterIntent, CurrencyConverterViewState>() {
 
     private val ratesAdapter by lazy {
-        RatesAdapter()
+        RatesAdapter({
+            dispatchIntent(CurrencyConverterIntent.CalculateRates(it))
+        }, {
+            dispatchIntent(CurrencyConverterIntent.LoadRates(it))
+        })
     }
 
-    @FlowPreview
     override val viewModel: BaseViewModel<CurrencyConverterViewState, CurrencyConverterIntent>
             by fragmentViewModel(this) {
                 component.currencyConverterViewModel
@@ -36,16 +35,8 @@ class CurrencyConverterFragment :
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
             adapter = ratesAdapter
         }
-    }
 
-    override suspend fun ProducerScope<CurrencyConverterIntent>.intentsProducer() {
-        offer(CurrencyConverterIntent.LoadRates("EUR"))
-
-        value_edit_text.addTextChangedListener {
-            if (!it.isNullOrEmpty()) {
-                offer(CurrencyConverterIntent.CalculateRates(it.toString().toDouble()))
-            }
-        }
+        dispatchIntent(CurrencyConverterIntent.Initial)
     }
 
     override fun render(state: CurrencyConverterViewState) {
@@ -55,7 +46,6 @@ class CurrencyConverterFragment :
 
         state.rate.rate?.let {
             ratesAdapter.submitList(it.values)
-            ratesAdapter.notifyDataSetChanged()
         }
     }
 }

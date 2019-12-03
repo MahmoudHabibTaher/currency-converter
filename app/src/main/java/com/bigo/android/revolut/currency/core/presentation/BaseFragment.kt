@@ -12,23 +12,14 @@ import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.channelFlow
 
-@ExperimentalCoroutinesApi
 abstract class BaseFragment<I : Intent, V : ViewState> : Fragment() {
     protected abstract val viewModel: BaseViewModel<V, I>
 
     protected abstract val layoutResId: Int?
 
-    private val intentsFlow = channelFlow<I> {
-        intentsProducer()
-
-        awaitClose()
-    }
-
     abstract fun render(state: V)
 
     abstract fun initView(view: View)
-
-    abstract suspend fun ProducerScope<I>.intentsProducer()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -43,7 +34,9 @@ abstract class BaseFragment<I : Intent, V : ViewState> : Fragment() {
         viewModel.states().observe(this, Observer {
             render(it)
         })
+    }
 
-        viewModel.processIntents(intentsFlow)
+    protected fun dispatchIntent(intent: I) {
+        viewModel.onIntent(intent)
     }
 }
